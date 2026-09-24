@@ -2,6 +2,7 @@ import type { CompanionVariableDefinitions } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import {
 	ALARM_SEVERITIES,
+	NO_INPUT,
 	applianceNames,
 	applianceRegions,
 	applianceStatus,
@@ -57,6 +58,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		definitions[`output_${key}_enabled`] = { name: `Output - ${output.name} - Enabled` }
 		definitions[`output_${key}_alarms`] = { name: `Output - ${output.name} - Active alarms` }
 		definitions[`output_${key}_source`] = { name: `Output - ${output.name} - Routed input name` }
+		definitions[`output_${key}_input_id`] = { name: `Output - ${output.name} - Routed input id` }
 	}
 
 	for (const appliance of state.appliances.values()) {
@@ -114,6 +116,7 @@ export function UpdateVariableValues(self: ModuleInstance): void {
 		values[`output_${key}_enabled`] = output.adminStatus === 1 ? 'On' : 'Off'
 		values[`output_${key}_alarms`] = state.alarmCountFor(output.id)
 		values[`output_${key}_source`] = state.inputName(output.input)
+		values[`output_${key}_input_id`] = output.input ?? NO_INPUT
 	}
 
 	const now = Date.now()

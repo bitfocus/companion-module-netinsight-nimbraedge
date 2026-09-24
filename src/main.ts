@@ -74,13 +74,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	async routeOutput(outputId: string, inputId: string): Promise<void> {
 		const input = inputId === NO_INPUT ? null : inputId
 		const outputName = this.state.outputs.get(outputId)?.name ?? outputId
+		const route = `${input ? `${this.state.inputName(input)} (${input})` : 'nothing'} -> ${outputName} (${outputId})`
 		try {
 			const updated = await this.api.route(outputId, input)
 			this.state.setRoute(outputId, updated?.input ?? input)
-			this.log('info', `Routed ${input ? this.state.inputName(input) : 'nothing'} to ${outputName}`)
+			this.log('info', `Routed ${route}`)
 		} catch (e) {
-			this.log('error', `Failed to route to ${outputName}: ${errorMessage(e)}`)
-			return
+			this.log('error', `Failed to route ${route}: ${errorMessage(e)}`)
+			// Rethrow so the router and button see the failure
+			throw e
 		}
 		UpdateVariableValues(this)
 		this.checkFeedbacks('output_routed', 'selected_output_source')

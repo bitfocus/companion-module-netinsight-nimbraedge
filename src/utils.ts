@@ -16,9 +16,9 @@ export function capitalize(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Edge ids are UUIDs, which aren't safe in variable ids */
+/** Variable ids allow only letters, numbers, `_` and `-`, so Edge UUIDs pass through unchanged */
 export function variableKey(id: string): string {
-	return id.replace(/[^a-zA-Z0-9]/g, '_')
+	return id.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
 /** e.g. "5s ago", "3m ago", "2h ago", "4d ago" */
