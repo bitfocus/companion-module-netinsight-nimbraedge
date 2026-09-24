@@ -2,7 +2,12 @@ import { Regex, type SomeCompanionConfigField } from '@companion-module/base'
 
 export type ModuleConfig = {
 	host: string
-	port: number
+	pollInterval: number
+	username: string
+}
+
+export type ModuleSecrets = {
+	password: string
 }
 
 export function GetConfigFields(): SomeCompanionConfigField[] {
@@ -10,18 +15,30 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 		{
 			type: 'textinput',
 			id: 'host',
-			label: 'Target IP',
-			width: 8,
-			regex: Regex.IP,
+			label: 'Nimbra Edge Host',
+			width: 12,
+			regex: Regex.HOSTNAME,
+		},
+		{
+			type: 'textinput',
+			id: 'username',
+			label: 'Username',
+			width: 6,
+		},
+		{
+			type: 'secret-text',
+			id: 'password',
+			label: 'Password',
+			width: 6,
 		},
 		{
 			type: 'number',
-			id: 'port',
-			label: 'Target Port',
-			width: 4,
-			min: 1,
-			max: 65535,
-			default: 8000,
+			id: 'pollInterval',
+			label: 'Poll Interval (seconds)',
+			width: 6,
+			min: 2,
+			max: 300,
+			default: 5,
 		},
 	]
 }
