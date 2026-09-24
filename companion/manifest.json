@@ -3,16 +3,16 @@
 	"type": "connection",
 	"id": "netinsight-nimbraedge",
 	"name": "netinsight-nimbraedge",
-	"shortname": "module-shortname",
-	"description": "A short one line description of your module",
+	"shortname": "nimbra",
+	"description": "Control Net Insight's Nimbra Edge platform.",
 	"version": "0.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-netinsight-nimbraedge.git",
 	"bugs": "https://github.com/bitfocus/companion-module-netinsight-nimbraedge/issues",
 	"maintainers": [
 		{
-			"name": "Your name",
-			"email": "Your email"
+			"name": "Bitfocus AS",
+			"email": "connections@bitfocus.io"
 		}
 	],
 	"runtime": {
@@ -22,7 +22,7 @@
 		"entrypoint": "../dist/main.js"
 	},
 	"legacyIds": [],
-	"manufacturer": "Your company",
-	"products": ["Your product"],
-	"keywords": []
+	"manufacturer": "Net Insight",
+	"products": ["Nimbra Edge"],
+	"keywords": ["ip", "cloud", "media delivery"]
 }
