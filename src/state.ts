@@ -270,11 +270,32 @@ export function applianceNames(item: EdgeEndpoint): string {
 	return (item.appliances ?? []).map((a) => a.name).join(', ')
 }
 
+// Buttons tags ports by the words SDI, NDI, SRT and Generator in these labels, and hides Internal ports
+const PORT_TYPE_LABELS: Record<string, string> = {
+	asi: 'ASI',
+	comprimatoNdi: 'NDI',
+	comprimatoSdi: 'SDI',
+	generator: 'Generator',
+	internal: 'Internal',
+	matroxSdi: 'Matrox SDI',
+	rist: 'RIST',
+	rtmp: 'RTMP',
+	rtp: 'RTP',
+	sdi: 'SDI',
+	srt: 'SRT',
+	udp: 'UDP',
+	unix: 'Unix socket',
+	videonAuto: 'Videon auto',
+	videonHdmi: 'Videon HDMI',
+	videonSdi: 'Videon SDI',
+	zixi: 'Zixi',
+}
+
 /** e.g. "SRT caller", from the first port like the Edge web UI */
 export function portType(item: EdgeEndpoint): string {
 	const port = item.ports?.[0]
 	if (!port) return ''
-	return [port.mode.toUpperCase(), port.srtMode].filter(Boolean).join(' ')
+	return [PORT_TYPE_LABELS[port.mode] ?? port.mode, port.srtMode].filter(Boolean).join(' ')
 }
 
 /** e.g. "H.264 720p50", or "MPTS (3 services) H.264 720p50" */
