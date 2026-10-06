@@ -42,14 +42,19 @@ export const OUTPUT_HEALTH_STATES = [
 	'notConfigured',
 ]
 
-/** The server leaves `title` empty for some states (e.g. allOk) */
+/** Short label for the state; the server's `title` is often a long sentence, so it goes in healthDetail */
 function labelFor(health: EdgeHealth | undefined, labels: Record<string, string>): string {
 	if (!health) return ''
-	return health.title || labels[health.state] || health.state
+	return labels[health.state] ?? health.state
 }
 
 export function healthText(health: EdgeHealth | undefined): string {
 	return labelFor(health, HEALTH_LABELS)
+}
+
+/** The server leaves `title` empty for some states (e.g. allOk) */
+export function healthDetail(health: EdgeHealth | undefined): string {
+	return health?.title ?? ''
 }
 
 /** Feedback option: any state other than healthy */

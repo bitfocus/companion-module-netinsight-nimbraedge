@@ -222,8 +222,10 @@ export class NimbraEdgeApi {
 
 		if (!response.ok) {
 			const detail = await response.text().catch(() => '')
+			// HTTP/2 responses have no status text
+			const status = [response.status, response.statusText].filter(Boolean).join(' ')
 			throw new NimbraEdgeApiError(
-				`${method} ${url.pathname} returned ${response.status} ${response.statusText}${detail ? ` - ${detail.slice(0, 200)}` : ''}`,
+				`${method} ${url.pathname} returned ${status}${detail ? ` - ${detail.slice(0, 200)}` : ''}`,
 				response.status,
 			)
 		}

@@ -8,3 +8,4 @@ DEBUG-*
 /.vscode
 .env
 /docs
+.DS_Store
