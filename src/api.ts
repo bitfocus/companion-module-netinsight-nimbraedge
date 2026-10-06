@@ -45,7 +45,7 @@ export class NimbraEdgeApi {
 
 	async connect(config: ModuleConfig, secrets: ModuleSecrets): Promise<void> {
 		this.stopPolling()
-		this.generation++
+		const generation = ++this.generation
 		this.polling = false
 		this.buildInfo = null
 		await this.logout()
@@ -70,6 +70,8 @@ export class NimbraEdgeApi {
 
 		this.setStatus(InstanceStatus.Connecting)
 		await this.poll()
+		// A newer connect() or destroy() ran while the first poll was in flight
+		if (generation !== this.generation) return
 		this.startPolling()
 	}
 
