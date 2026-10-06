@@ -74,6 +74,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 	}
 
 	self.setVariableDefinitions(definitions)
+	sentValues.delete(self)
 }
 
 export function UpdateVariableValues(self: ModuleInstance): void {
