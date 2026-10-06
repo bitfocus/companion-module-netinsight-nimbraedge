@@ -7,6 +7,7 @@ import {
 	applianceRegions,
 	applianceStatus,
 	applianceType,
+	healthDetail,
 	healthText,
 	portType,
 	serviceNames,
@@ -39,6 +40,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		const key = variableKey(input.id)
 		definitions[`input_${key}_name`] = { name: `Input - ${input.name} - Name` }
 		definitions[`input_${key}_status`] = { name: `Input - ${input.name} - Status` }
+		definitions[`input_${key}_status_detail`] = { name: `Input - ${input.name} - Status detail` }
 		definitions[`input_${key}_appliance`] = { name: `Input - ${input.name} - Appliance` }
 		definitions[`input_${key}_type`] = { name: `Input - ${input.name} - Type` }
 		definitions[`input_${key}_format`] = { name: `Input - ${input.name} - Format` }
@@ -51,6 +53,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		const key = variableKey(output.id)
 		definitions[`output_${key}_name`] = { name: `Output - ${output.name} - Name` }
 		definitions[`output_${key}_status`] = { name: `Output - ${output.name} - Status` }
+		definitions[`output_${key}_status_detail`] = { name: `Output - ${output.name} - Status detail` }
 		definitions[`output_${key}_appliance`] = { name: `Output - ${output.name} - Appliance` }
 		definitions[`output_${key}_type`] = { name: `Output - ${output.name} - Type` }
 		definitions[`output_${key}_format`] = { name: `Output - ${output.name} - Format` }
@@ -65,6 +68,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		const key = variableKey(appliance.id)
 		definitions[`appliance_${key}_name`] = { name: `Appliance - ${appliance.name} - Name` }
 		definitions[`appliance_${key}_status`] = { name: `Appliance - ${appliance.name} - Status` }
+		definitions[`appliance_${key}_status_detail`] = { name: `Appliance - ${appliance.name} - Status detail` }
 		definitions[`appliance_${key}_cpu`] = { name: `Appliance - ${appliance.name} - CPU usage (%)` }
 		definitions[`appliance_${key}_memory`] = { name: `Appliance - ${appliance.name} - Memory usage (%)` }
 		definitions[`appliance_${key}_type`] = { name: `Appliance - ${appliance.name} - Type` }
@@ -98,6 +102,7 @@ export function UpdateVariableValues(self: ModuleInstance): void {
 		const key = variableKey(input.id)
 		values[`input_${key}_name`] = input.name
 		values[`input_${key}_status`] = healthText(input.health)
+		values[`input_${key}_status_detail`] = healthDetail(input.health)
 		values[`input_${key}_appliance`] = applianceNames(input)
 		values[`input_${key}_type`] = portType(input)
 		values[`input_${key}_format`] = streamFormat(input)
@@ -110,6 +115,7 @@ export function UpdateVariableValues(self: ModuleInstance): void {
 		const key = variableKey(output.id)
 		values[`output_${key}_name`] = output.name
 		values[`output_${key}_status`] = healthText(output.health)
+		values[`output_${key}_status_detail`] = healthDetail(output.health)
 		values[`output_${key}_appliance`] = applianceNames(output)
 		values[`output_${key}_type`] = portType(output)
 		values[`output_${key}_format`] = streamFormat(output)
@@ -125,6 +131,7 @@ export function UpdateVariableValues(self: ModuleInstance): void {
 		const key = variableKey(appliance.id)
 		values[`appliance_${key}_name`] = appliance.name
 		values[`appliance_${key}_status`] = applianceStatus(appliance)
+		values[`appliance_${key}_status_detail`] = healthDetail(appliance.health)
 		values[`appliance_${key}_cpu`] = usagePercent(appliance.metrics?.cpu?.usage) ?? 'N/A'
 		values[`appliance_${key}_memory`] = usagePercent(appliance.metrics?.memory?.usage) ?? 'N/A'
 		values[`appliance_${key}_type`] = applianceType(appliance)
