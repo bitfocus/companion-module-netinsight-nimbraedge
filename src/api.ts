@@ -25,6 +25,14 @@ export class NimbraEdgeApiError extends Error {
 	}
 }
 
+/** The login itself was rejected, as opposed to an authenticated request being denied */
+export class NimbraEdgeAuthError extends NimbraEdgeApiError {
+	constructor(message: string, status: number | null) {
+		super(message, status)
+		this.name = 'NimbraEdgeAuthError'
+	}
+}
+
 export class NimbraEdgeApi {
 	private baseUrl: string | null = null
 	private username = ''
@@ -156,18 +164,26 @@ export class NimbraEdgeApi {
 	}
 
 	private async login(): Promise<void> {
-		const { headers } = await this.send(
-			'POST',
-			'/api/login/',
-			null,
-			{
-				username: this.username,
-				password: this.password,
-			},
-			false,
-		)
+		let response: { headers: Headers }
+		try {
+			response = await this.send(
+				'POST',
+				'/api/login/',
+				null,
+				{
+					username: this.username,
+					password: this.password,
+				},
+				false,
+			)
+		} catch (e) {
+			if (e instanceof NimbraEdgeApiError && (e.status === 401 || e.status === 403)) {
+				throw new NimbraEdgeAuthError(e.message, e.status)
+			}
+			throw e
+		}
 
-		const cookie = headers.getSetCookie().find((c) => c.startsWith('edgetoken='))
+		const cookie = response.headers.getSetCookie().find((c) => c.startsWith('edgetoken='))
 		if (!cookie) throw new NimbraEdgeApiError('Login succeeded but no session cookie was returned', null)
 		this.sessionCookie = cookie.split(';')[0]
 		this.instance.log('debug', `Logged in to Nimbra Edge as ${this.username}`)
@@ -246,8 +262,11 @@ export class NimbraEdgeApi {
 	private handleError(e: unknown): void {
 		const message = errorMessage(e)
 
-		if (e instanceof NimbraEdgeApiError && (e.status === 401 || e.status === 403)) {
+		if (e instanceof NimbraEdgeAuthError) {
 			this.setStatus(InstanceStatus.AuthenticationFailure, 'Login failed - check username and password', message)
+		} else if (e instanceof NimbraEdgeApiError && (e.status === 401 || e.status === 403)) {
+			// Logged in, but this user may not read one of the endpoints the module polls
+			this.setStatus(InstanceStatus.InsufficientPermissions, "Access denied - check the user's permissions", message)
 		} else if (e instanceof NimbraEdgeApiError && e.status === null) {
 			this.buildInfo = null
 			this.sessionCookie = null
