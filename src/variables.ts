@@ -78,7 +78,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 	}
 
 	self.setVariableDefinitions(definitions)
-	sentValues.delete(self)
+	self.sentVariableValues.clear()
 }
 
 export function UpdateVariableValues(self: ModuleInstance): void {
@@ -143,15 +143,8 @@ export function UpdateVariableValues(self: ModuleInstance): void {
 	setChangedValues(self, values)
 }
 
-const sentValues = new WeakMap<ModuleInstance, Map<string, VariablesSchema[string]>>()
-
 function setChangedValues(self: ModuleInstance, values: VariablesSchema): void {
-	let sent = sentValues.get(self)
-	if (!sent) {
-		sent = new Map()
-		sentValues.set(self, sent)
-	}
-
+	const sent = self.sentVariableValues
 	const changed: VariablesSchema = {}
 	let hasChanges = false
 	for (const [id, value] of Object.entries(values)) {

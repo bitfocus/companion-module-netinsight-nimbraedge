@@ -143,7 +143,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			type: 'simple',
 			name: `${label} status`,
 			style: {
-				text: `${variable(`appliance_${key}_name`)}\nCPU ${variable(`appliance_${key}_cpu`)}% MEM ${variable(`appliance_${key}_memory`)}%`,
+				text: `${variable(`appliance_${key}_name`)}\nCPU% ${variable(`appliance_${key}_cpu`)}\nMEM% ${variable(`appliance_${key}_memory`)}`,
 				size: 'auto',
 				color: COLOR.WHITE,
 				bgcolor: COLOR.GREEN,
