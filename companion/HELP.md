@@ -2,7 +2,7 @@
 
 ### Getting Started
 
-1. Enter the hostname of your Nimbra Edge server (e.g. `edge.nimbra.io`). The module connects over HTTPS.
+1. Enter the hostname of your Nimbra Edge server (e.g. `edge.nimbra.io`). The module connects over HTTPS, on port 443 unless you set another port. If the server uses a self-signed or internal certificate, enable **Accept self-signed / untrusted certificates**.
 2. Enter the username and password of a Nimbra Edge user. It is recommended to create a dedicated user for this connection.
 3. Optionally adjust the poll interval (default 5 seconds).
 
