@@ -1,4 +1,5 @@
 import { InstanceStatus } from '@companion-module/base'
+import { Agent, fetch, type Dispatcher } from 'undici'
 import type ModuleInstance from './main.js'
 import type { ModuleConfig, ModuleSecrets } from './config.js'
 import { type EdgeAlarm, type EdgeAppliance, type EdgeInput, type EdgeOutput } from './state.js'
@@ -33,74 +34,51 @@ export class NimbraEdgeAuthError extends NimbraEdgeApiError {
 	}
 }
 
-export class NimbraEdgeApi {
-	private baseUrl: string | null = null
-	private username = ''
-	private password = ''
-	private sessionCookie: string | null = null
+type EdgeTarget = {
+	baseUrl: string
+	username: string
+	password: string
+	ignoreCertErrors: boolean
+}
+
+/**
+ * One login to one server. Each connect() gets a new session, so requests still in flight from a previous config
+ * can't log in with old credentials or hand their cookie to the new server.
+ */
+class EdgeSession {
+	private cookie: string | null = null
 	// Shared so concurrent requests trigger a single login
 	private pendingLogin: Promise<void> | null = null
-	private pollTimer: NodeJS.Timeout | null = null
-	private pollIntervalMs = 30_000
-	private lastStatus: InstanceStatus | null = null
-	private lastErrorMessage: string | null = null
-	private polling = false
-	private generation = 0
+	private readonly closed = new AbortController()
+	private readonly dispatcher: Dispatcher | undefined
 
-	buildInfo: EdgeBuildInfo | null = null
-
-	constructor(private readonly instance: ModuleInstance) {}
-
-	async connect(config: ModuleConfig, secrets: ModuleSecrets): Promise<void> {
-		this.stopPolling()
-		const generation = ++this.generation
-		this.polling = false
-		this.buildInfo = null
-		await this.logout()
-
-		const host = config.host?.trim()
-		this.username = config.username?.trim() ?? ''
-		this.password = secrets.password ?? ''
-		this.pollIntervalMs = Math.max(2, config.pollInterval || 5) * 1000
-
-		if (!host) {
-			this.baseUrl = null
-			this.setStatus(InstanceStatus.BadConfig, 'Host is not set')
-			return
-		}
-		if (!this.username || !this.password) {
-			this.baseUrl = null
-			this.setStatus(InstanceStatus.BadConfig, 'Username and password are required')
-			return
-		}
-
-		this.baseUrl = `https://${host}`
-
-		this.setStatus(InstanceStatus.Connecting)
-		await this.poll()
-		// A newer connect() or destroy() ran while the first poll was in flight
-		if (generation !== this.generation) return
-		this.startPolling()
+	constructor(
+		private readonly target: EdgeTarget,
+		private readonly instance: ModuleInstance,
+	) {
+		this.dispatcher = target.ignoreCertErrors ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined
 	}
 
-	async destroy(): Promise<void> {
-		this.stopPolling()
-		this.generation++
-		await this.logout()
-		this.baseUrl = null
-	}
-
-	/** Best-effort: failures are only logged */
-	private async logout(): Promise<void> {
-		if (!this.sessionCookie) return
+	/** Aborts in-flight requests, then logs out. Best-effort: failures are only logged */
+	async close(): Promise<void> {
+		this.closed.abort()
+		const cookie = this.cookie
+		this.cookie = null
 		try {
-			await this.send('POST', '/api/logout/', null, null, true)
-			this.instance.log('debug', 'Logged out of Nimbra Edge')
+			if (cookie) {
+				await this.fetch('POST', '/api/logout/', null, null, cookie, AbortSignal.timeout(REQUEST_TIMEOUT_MS))
+				this.instance.log('debug', 'Logged out of Nimbra Edge')
+			}
 		} catch (e) {
 			this.instance.log('debug', `Logout failed: ${errorMessage(e)}`)
 		} finally {
-			this.sessionCookie = null
+			await this.dispatcher?.close()
 		}
+	}
+
+	/** Forces a fresh login on the next request */
+	clearLogin(): void {
+		this.cookie = null
 	}
 
 	async get<T>(path: string, query: Record<string, unknown> | null): Promise<T> {
@@ -116,21 +94,16 @@ export class NimbraEdgeApi {
 		}
 	}
 
+	async getUnauthenticated<T>(path: string): Promise<T> {
+		return this.request<T>('GET', path, null, null, false)
+	}
+
 	async post<T>(path: string, body: unknown): Promise<T> {
 		return this.request<T>('POST', path, null, body, true)
 	}
 
 	async put<T>(path: string, body: unknown): Promise<T> {
 		return this.request<T>('PUT', path, null, body, true)
-	}
-
-	async route(outputId: string, inputId: string | null): Promise<EdgeOutput> {
-		return this.put<EdgeOutput>(`/api/output/${encodeURIComponent(outputId)}/input`, { input: inputId })
-	}
-
-	// Undocumented endpoint used by the Edge web UI
-	async restartAppliance(applianceId: string): Promise<void> {
-		await this.post(`/api/appliance/${encodeURIComponent(applianceId)}/restart`, null)
 	}
 
 	private async request<T>(
@@ -140,23 +113,23 @@ export class NimbraEdgeApi {
 		body: unknown,
 		authenticated: boolean,
 	): Promise<T> {
-		if (!authenticated) return (await this.send<T>(method, path, query, body, false)).data
+		if (!authenticated) return (await this.send<T>(method, path, query, body, null)).data
 
 		await this.validateSession()
-		const usedCookie = this.sessionCookie
+		const usedCookie = this.cookie
 		try {
-			return (await this.send<T>(method, path, query, body, true)).data
+			return (await this.send<T>(method, path, query, body, usedCookie)).data
 		} catch (e) {
 			if (!(e instanceof NimbraEdgeApiError) || e.status !== 401) throw e
 			// Session expired: retry once, unless another request already replaced the session
-			if (this.sessionCookie === usedCookie) this.sessionCookie = null
+			if (this.cookie === usedCookie) this.cookie = null
 			await this.validateSession()
-			return (await this.send<T>(method, path, query, body, true)).data
+			return (await this.send<T>(method, path, query, body, this.cookie)).data
 		}
 	}
 
 	private async validateSession(): Promise<void> {
-		if (this.sessionCookie) return
+		if (this.cookie) return
 		this.pendingLogin ??= this.login().finally(() => {
 			this.pendingLogin = null
 		})
@@ -164,18 +137,10 @@ export class NimbraEdgeApi {
 	}
 
 	private async login(): Promise<void> {
+		const { username, password } = this.target
 		let response: { headers: Headers }
 		try {
-			response = await this.send(
-				'POST',
-				'/api/login/',
-				null,
-				{
-					username: this.username,
-					password: this.password,
-				},
-				false,
-			)
+			response = await this.send('POST', '/api/login/', null, { username, password }, null)
 		} catch (e) {
 			if (e instanceof NimbraEdgeApiError && (e.status === 401 || e.status === 403)) {
 				throw new NimbraEdgeAuthError(e.message, e.status)
@@ -185,8 +150,8 @@ export class NimbraEdgeApi {
 
 		const cookie = response.headers.getSetCookie().find((c) => c.startsWith('edgetoken='))
 		if (!cookie) throw new NimbraEdgeApiError('Login succeeded but no session cookie was returned', null)
-		this.sessionCookie = cookie.split(';')[0]
-		this.instance.log('debug', `Logged in to Nimbra Edge as ${this.username}`)
+		this.cookie = cookie.split(';')[0]
+		this.instance.log('debug', `Logged in to Nimbra Edge as ${username}`)
 	}
 
 	private async send<T>(
@@ -194,25 +159,38 @@ export class NimbraEdgeApi {
 		path: string,
 		query: Record<string, unknown> | null,
 		body: unknown,
-		authenticated: boolean,
+		cookie: string | null,
 	): Promise<{ data: T; headers: Headers }> {
-		if (!this.baseUrl) throw new NimbraEdgeApiError('Not configured', null)
+		if (this.closed.signal.aborted)
+			throw new NimbraEdgeApiError(`${method} ${path} cancelled - connection closed`, null)
+		const signal = AbortSignal.any([this.closed.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+		return this.fetch<T>(method, path, query, body, cookie, signal)
+	}
 
-		const url = new URL(path, this.baseUrl)
+	private async fetch<T>(
+		method: string,
+		path: string,
+		query: Record<string, unknown> | null,
+		body: unknown,
+		cookie: string | null,
+		signal: AbortSignal,
+	): Promise<{ data: T; headers: Headers }> {
+		const url = new URL(path, this.target.baseUrl)
 		// List endpoints take their query as a JSON-encoded `q` param
 		if (query) url.searchParams.set('q', JSON.stringify(query))
 
 		const headers: Record<string, string> = { Accept: 'application/json' }
-		if (authenticated) headers.Cookie = this.sessionCookie ?? ''
+		if (cookie) headers.Cookie = cookie
 		if (body !== null) headers['Content-Type'] = 'application/json'
 
-		let response: Response
+		let response: Awaited<ReturnType<typeof fetch>>
 		try {
 			response = await fetch(url, {
 				method,
 				headers,
 				body: body !== null ? JSON.stringify(body) : undefined,
-				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+				signal,
+				dispatcher: this.dispatcher,
 			})
 		} catch (e) {
 			const cause = e instanceof Error && e.cause instanceof Error ? `: ${e.cause.message}` : ''
@@ -233,35 +211,121 @@ export class NimbraEdgeApi {
 		const text = await response.text()
 		return { data: (text ? JSON.parse(text) : undefined) as T, headers: response.headers }
 	}
+}
+
+export class NimbraEdgeApi {
+	private session: EdgeSession | null = null
+	private pollTimer: NodeJS.Timeout | null = null
+	private lastStatus: InstanceStatus | null = null
+	private lastErrorMessage: string | null = null
+	private polling = false
+	// Logged once per (re)connection, so a server upgrade shows up in the log
+	private buildInfoLogged = false
+
+	constructor(private readonly instance: ModuleInstance) {}
+
+	/** Starts polling in the background; the first result arrives via onStateUpdated / the instance status */
+	connect(config: ModuleConfig, secrets: ModuleSecrets): void {
+		void this.disconnect()
+
+		const host = config.host?.trim()
+		const username = config.username?.trim() ?? ''
+		const password = secrets.password ?? ''
+
+		if (!host) {
+			this.setStatus(InstanceStatus.BadConfig, 'Host is not set', null)
+			return
+		}
+		if (!username || !password) {
+			this.setStatus(InstanceStatus.BadConfig, 'Username and password are required', null)
+			return
+		}
+
+		const port = config.port || 443
+		const baseUrl = port === 443 ? `https://${host}` : `https://${host}:${port}`
+		this.session = new EdgeSession(
+			{ baseUrl, username, password, ignoreCertErrors: !!config.ignoreCertErrors },
+			this.instance,
+		)
+
+		this.setStatus(InstanceStatus.Connecting, null, null)
+		void this.poll()
+		const pollIntervalMs = Math.max(2, config.pollInterval || 5) * 1000
+		this.pollTimer = setInterval(() => {
+			void this.poll()
+		}, pollIntervalMs)
+	}
+
+	async destroy(): Promise<void> {
+		await this.disconnect()
+	}
+
+	/** Resolves once the old session has logged out; connect() leaves that to finish in the background */
+	private async disconnect(): Promise<void> {
+		if (this.pollTimer) {
+			clearInterval(this.pollTimer)
+			this.pollTimer = null
+		}
+		const session = this.session
+		this.session = null
+		this.polling = false
+		this.buildInfoLogged = false
+		await session?.close()
+	}
+
+	private activeSession(): EdgeSession {
+		if (!this.session) throw new NimbraEdgeApiError('Not configured', null)
+		return this.session
+	}
+
+	async route(outputId: string, inputId: string | null): Promise<EdgeOutput> {
+		return this.activeSession().put<EdgeOutput>(`/api/output/${encodeURIComponent(outputId)}/input`, { input: inputId })
+	}
+
+	// Undocumented endpoint used by the Edge web UI
+	async restartAppliance(applianceId: string): Promise<void> {
+		await this.activeSession().post(`/api/appliance/${encodeURIComponent(applianceId)}/restart`, null)
+	}
 
 	async poll(): Promise<void> {
-		if (this.polling) return
+		const session = this.session
+		if (!session || this.polling) return
 		this.polling = true
-		const generation = this.generation
 		try {
-			if (!this.buildInfo) {
-				this.buildInfo = await this.request<EdgeBuildInfo>('GET', '/api/build-info', null, null, false)
-				this.instance.log('info', `Connected to Nimbra Edge ${this.buildInfo.release} (${this.buildInfo.product})`)
+			if (!this.buildInfoLogged) {
+				this.buildInfoLogged = true
+				void this.logBuildInfo(session)
 			}
 
 			const [inputs, outputs, appliances, alarms] = await Promise.all([
-				this.getAll<EdgeInput>('/api/input/', { omitMetrics: false }),
-				this.getAll<EdgeOutput>('/api/output/', { omitMetrics: false }),
-				this.getAll<EdgeAppliance>('/api/appliance/', {}),
-				this.getAll<EdgeAlarm>('/api/alarm/', {}),
+				session.getAll<EdgeInput>('/api/input/', { omitMetrics: false }),
+				session.getAll<EdgeOutput>('/api/output/', { omitMetrics: false }),
+				session.getAll<EdgeAppliance>('/api/appliance/', {}),
+				session.getAll<EdgeAlarm>('/api/alarm/', {}),
 			])
-			if (generation !== this.generation) return // destroyed or reconfigured mid-poll
+			if (session !== this.session) return // destroyed or reconfigured mid-poll
 
 			this.instance.onStateUpdated({ inputs, outputs, appliances, alarms })
-			this.setStatus(InstanceStatus.Ok)
+			this.setStatus(InstanceStatus.Ok, null, null)
 		} catch (e) {
-			if (generation === this.generation) this.handleError(e)
+			if (session === this.session) this.handleError(session, e)
 		} finally {
-			if (generation === this.generation) this.polling = false
+			if (session === this.session) this.polling = false
 		}
 	}
 
-	private handleError(e: unknown): void {
+	/** Only informational, so failures don't affect polling */
+	private async logBuildInfo(session: EdgeSession): Promise<void> {
+		try {
+			const buildInfo = await session.getUnauthenticated<EdgeBuildInfo>('/api/build-info')
+			this.instance.log('info', `Connected to Nimbra Edge ${buildInfo.release} (${buildInfo.product})`)
+		} catch (e) {
+			if (session === this.session)
+				this.instance.log('debug', `Unable to read Nimbra Edge build info: ${errorMessage(e)}`)
+		}
+	}
+
+	private handleError(session: EdgeSession, e: unknown): void {
 		const message = errorMessage(e)
 
 		if (e instanceof NimbraEdgeAuthError) {
@@ -270,8 +334,8 @@ export class NimbraEdgeApi {
 			// Logged in, but this user may not read one of the endpoints the module polls
 			this.setStatus(InstanceStatus.InsufficientPermissions, "Access denied - check the user's permissions", message)
 		} else if (e instanceof NimbraEdgeApiError && e.status === null) {
-			this.buildInfo = null
-			this.sessionCookie = null
+			this.buildInfoLogged = false
+			session.clearLogin()
 			this.setStatus(InstanceStatus.ConnectionFailure, 'Unable to reach Nimbra Edge', message)
 		} else {
 			this.setStatus(InstanceStatus.UnknownError, 'Unexpected response from Nimbra Edge', message)
@@ -279,8 +343,8 @@ export class NimbraEdgeApi {
 	}
 
 	// Only logs on change to avoid repeating the same error every poll
-	private setStatus(status: InstanceStatus, statusMessage?: string, logMessage?: string): void {
-		const errorMessage = logMessage ?? statusMessage ?? null
+	private setStatus(status: InstanceStatus, statusMessage: string | null, logMessage: string | null): void {
+		const errorMessage = logMessage ?? statusMessage
 		if (status === this.lastStatus && errorMessage === this.lastErrorMessage) return
 
 		if (status === InstanceStatus.Ok && this.lastStatus !== null && this.lastStatus !== InstanceStatus.Connecting) {
@@ -291,19 +355,6 @@ export class NimbraEdgeApi {
 
 		this.lastStatus = status
 		this.lastErrorMessage = errorMessage
-		this.instance.updateStatus(status, statusMessage ?? null)
-	}
-
-	private startPolling(): void {
-		this.pollTimer = setInterval(() => {
-			void this.poll()
-		}, this.pollIntervalMs)
-	}
-
-	private stopPolling(): void {
-		if (this.pollTimer) {
-			clearInterval(this.pollTimer)
-			this.pollTimer = null
-		}
+		this.instance.updateStatus(status, statusMessage)
 	}
 }

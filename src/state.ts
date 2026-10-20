@@ -352,8 +352,9 @@ export function applianceStatus(appliance: EdgeAppliance): string {
 	return labelFor(appliance.health, APPLIANCE_STATUS_LABELS)
 }
 
+/** Same rule as the "Not connected" option of the appliance_status feedback */
 export function isApplianceOffline(appliance: EdgeAppliance): boolean {
-	return appliance.health?.state !== APPLIANCE_CONNECTED
+	return matchesHealth(appliance.health?.state, ANY_UNHEALTHY, APPLIANCE_CONNECTED)
 }
 
 const APPLIANCE_TYPE_LABELS: Record<string, string> = {
