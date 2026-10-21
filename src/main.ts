@@ -32,11 +32,13 @@ const FEEDBACKS_BY_ASPECT: Record<StateAspect, (keyof FeedbacksSchema)[]> = {
 export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	api = new NimbraEdgeApi(this)
 	state = new EdgeState()
+	/** Last value sent per variable, so each poll only sends what changed */
+	sentVariableValues = new Map<string, VariablesSchema[string]>()
 
 	async init(config: ModuleConfig, _isFirstInit: boolean, secrets: ModuleSecrets): Promise<void> {
 		this.updateDefinitions()
 
-		await this.api.connect(config, secrets)
+		this.api.connect(config, secrets)
 	}
 
 	async destroy(): Promise<void> {
@@ -54,7 +56,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.updateDefinitions()
 		this.checkAllFeedbacks()
 
-		await this.api.connect(config, secrets)
+		this.api.connect(config, secrets)
 	}
 
 	onStateUpdated(snapshot: EdgeSnapshot): void {
@@ -95,6 +97,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.log('info', `Restart requested for appliance ${name}`)
 		} catch (e) {
 			this.log('error', `Failed to restart appliance ${name}: ${errorMessage(e)}`)
+			throw e
 		}
 	}
 

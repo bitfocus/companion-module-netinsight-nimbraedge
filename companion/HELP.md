@@ -2,7 +2,7 @@
 
 ### Getting Started
 
-1. Enter the hostname of your Nimbra Edge server (e.g. `edge.nimbra.io`). The module connects over HTTPS.
+1. Enter the hostname of your Nimbra Edge server (e.g. `edge.nimbra.io`). The module connects over HTTPS, on port 443 unless you set another port. If the server uses a self-signed or internal certificate, enable **Accept self-signed / untrusted certificates**.
 2. Enter the username and password of a Nimbra Edge user. It is recommended to create a dedicated user for this connection.
 3. Optionally adjust the poll interval (default 5 seconds).
 
@@ -25,9 +25,11 @@
 
 - Counts: `input_count`, `output_count`, `appliance_count`, `appliance_offline_count`, `alarm_count`, `alarm_critical`, `alarm_major`, `alarm_minor`, `alarm_warning`
 - XY: `selected_output_name`, `selected_output_source_name`
-- Per input: `input_<id>_name`, `_status`, `_appliance`, `_type`, `_format`, `_services`, `_enabled`, `_alarms`, `_outputs`
-- Per output: `output_<id>_name`, `_status`, `_appliance`, `_type`, `_format`, `_services`, `_enabled`, `_alarms`, `_source`, `_input_id`
-- Per appliance: `appliance_<id>_name`, `_status`, `_cpu`, `_memory`, `_type`, `_regions`, `_alarms`, `_last_seen`
+- Per input: `input_<id>_name`, `_status`, `_status_detail`, `_appliance`, `_type`, `_format`, `_services`, `_enabled`, `_alarms`, `_outputs`
+- Per output: `output_<id>_name`, `_status`, `_status_detail`, `_appliance`, `_type`, `_format`, `_services`, `_enabled`, `_alarms`, `_source`, `_input_id`
+- Per appliance: `appliance_<id>_name`, `_status`, `_status_detail`, `_cpu`, `_memory`, `_type`, `_regions`, `_alarms`, `_last_seen`
+
+`_status` is a short state label (e.g. `Connected`, `Input error`); `_status_detail` is the server's full description, when it gives one.
 
 `<id>` is the Edge id (UUID) of the input, output or appliance. `output_<id>_input_id` holds the id of the routed input (empty when disconnected), matching the input option of **Route Input to Output**.
 
